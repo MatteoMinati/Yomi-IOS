@@ -1,57 +1,76 @@
 # Yomi Web
 
-Versione web di **Yomi**, il lettore di manga basato sull'API pubblica di MangaDex.
-Stesse funzioni dell'app iOS (Home, Ricerca IT/EN, Dettaglio, Reader, Libreria),
-ma nel browser. **Zero dipendenze**: serve solo Python 3 (già incluso in molti sistemi).
+Versione web di **Yomi**, il lettore di manga. Legge i contenuti da
+**MangaWorld** (in italiano) tramite un piccolo backend Python. Stesse funzioni
+dell'app iOS (Home, Ricerca, Dettaglio, Reader, Libreria), ma nel browser — ed è
+una **PWA installabile** su iPhone (Aggiungi a Home).
 
-## Avvio
+## Provarla in locale (sul PC)
 
-Dalla cartella del progetto:
-
-```bash
-python web/server.py
-```
-
-Poi apri **http://localhost:5173** nel browser.
-
-Per usare un'altra porta:
+`server.py` fa sia da hosting statico sia da backend.
 
 ```bash
-python web/server.py 8080
+pip install -r web/requirements.txt
+python web/server.py        # porta 5173 (o passa un'altra porta: python web/server.py 8080)
 ```
 
-Ferma il server con `Ctrl+C`.
+Apri **http://localhost:5173**. Su `localhost` l'app usa automaticamente il
+backend locale, senza chiedere configurazione. Ferma con `Ctrl+C`.
+
+## Usarla come app sull'iPhone
+
+Vedi **[DEPLOY.md](DEPLOY.md)**: si ospita `server.py` sul proprio **VPS** e si
+pubblica la PWA (o la si serve dallo stesso VPS). Al primo avvio l'app chiede
+l'URL del backend, poi funziona ovunque, anche a PC spento.
 
 ## Come funziona
 
-`server.py` è un piccolo server locale a zero dipendenze (solo libreria standard Python) che:
+MangaWorld **non è un'API**: è un sito da cui si estraggono i dati facendo lo
+scraping dell'HTML (`mangaworld.py`, adattato da
+[pymangaworld](https://github.com/) — GPLv3). Questo lavoro richiede Python
+(BeautifulSoup + lxml), quindi gira in un **backend** — non più un semplice
+proxy, e **non** su Cloudflare Workers.
 
-1. **serve i file statici** della web app (`index.html`, `styles.css`, `*.js`);
-2. fa da **proxy CORS** verso l'API MangaDex sui percorsi `/mdx/*`
-   (necessario perché le risposte in cache di MangaDex a volte non
-   includono l'header `Access-Control-Allow-Origin`, bloccando le
-   chiamate dirette dal browser);
-3. fa da **proxy immagini** su `/img?u=...` per copertine e pagine, così
-   tutta l'app è same-origin e non dipende da CORS o certificati esterni.
-   Sono ammessi solo host `*.mangadex.org` e `*.mangadex.network`.
+`server.py` espone JSON già pronto e un proxy immagini:
 
-Le preferenze (libreria, capitolo letto, modalità reader, data saver) sono
+- `/api/ping` → `pong` (usato dalla schermata di configurazione);
+- `/api/home` → `{popular, latest}` (archivio ordinato per più letti / più recenti);
+- `/api/search?q=…` → risultati di ricerca;
+- `/api/manga?id=…` → dettaglio (trama, generi, stato, anno);
+- `/api/chapters?id=…` → elenco capitoli;
+- `/api/pages?id=…` → URL delle pagine del capitolo;
+- `/img?u=…` → proxy per copertine e pagine (aggiunge il `Referer` che
+  MangaWorld richiede contro l'hotlinking; consente solo host del suo dominio).
+
+Gli `id` di manga e capitoli sono l'URL MangaWorld codificato in base64url.
+
+`config.js` decide dove trovare il backend: su `localhost` è lo stesso indirizzo;
+online è l'URL del VPS salvato dall'utente (schermata di configurazione / ⚙).
+
+Il dominio di MangaWorld cambia spesso TLD (`.ac` → `.mx` → …): è configurabile
+senza toccare il codice con la variabile d'ambiente `MANGAWORLD_BASE`.
+
+Le preferenze (libreria, capitolo letto, modalità reader, URL del backend) sono
 salvate nel `localStorage` del browser.
 
 ## Struttura
 
 ```
 web/
-  server.py     # server statico + proxy (zero dipendenze)
-  index.html    # shell + tab bar
-  styles.css    # tema scuro
-  api.js        # client MangaDex (via proxy /mdx e /img)
-  store.js      # libreria e progressi (localStorage)
-  app.js        # router hash-based + viste
+  index.html            # shell + tab bar + PWA (manifest, meta iOS, service worker)
+  styles.css            # tema scuro
+  config.js             # dove trovare il backend (locale vs VPS)
+  api.js                # client del backend (/api/* e /img)
+  store.js              # libreria e progressi (localStorage)
+  app.js                # router hash-based + viste (incl. setup backend)
+  manifest.webmanifest  # PWA
+  sw.js                 # service worker (cache app shell, offline)
+  icons/                # icone PWA / apple-touch-icon
+  server.py             # backend + hosting (da ospitare sul VPS)
+  mangaworld.py         # scraper MangaWorld usato da server.py
+  requirements.txt      # dipendenze Python del backend
 ```
 
-## Uso su rete locale (es. dal telefono)
+## Deploy come app su iPhone
 
-Il server ascolta solo su `127.0.0.1`. Per raggiungerlo da un altro
-dispositivo sulla stessa rete, modifica in `server.py` l'indirizzo di bind
-da `"127.0.0.1"` a `"0.0.0.0"` e apri `http://<ip-del-pc>:5173`.
+Vedi **[DEPLOY.md](DEPLOY.md)**.

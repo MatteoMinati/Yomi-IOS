@@ -4,8 +4,8 @@
     {
       "name": "yomi-web",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["web/server.py", "5173"],
-      "port": 5173
+      "runtimeArgs": ["web/server.py", "5174"],
+      "port": 5174
     }
   ]
 }

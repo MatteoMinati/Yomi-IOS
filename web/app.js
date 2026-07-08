@@ -2,6 +2,7 @@
 
 import * as api from "./api.js";
 import * as store from "./store.js";
+import { isConfigured, getProxyBase, setProxyBase } from "./config.js";
 
 const app = document.getElementById("app");
 const tabbar = document.getElementById("tabbar");
@@ -82,19 +83,21 @@ function grid(items) {
 async function viewHome() {
   setActiveTab("home");
   clear(app);
-  app.append(el("header", { class: "topbar" }, el("h1", { class: "brand" }, "読み Yomi")));
+  app.append(
+    el("header", { class: "topbar spread" }, [
+      el("h1", { class: "brand" }, "読み Yomi"),
+      gearButton(),
+    ])
+  );
   const body = el("div", { class: "page" }, spinner());
   app.append(body);
 
   try {
-    const [popular, latest] = await Promise.all([
-      api.fetchPopular(0, 20),
-      api.fetchLatestUpdated(0, 20),
-    ]);
+    const { popular, latest } = await api.fetchHome();
     clear(body);
     body.append(
-      carousel("Popolari", popular.items),
-      carousel("Aggiornati di recente", latest.items)
+      carousel("Popolari", popular),
+      carousel("Aggiornati di recente", latest)
     );
   } catch (e) {
     clear(body);
@@ -104,7 +107,7 @@ async function viewHome() {
 
 // --- Vista: Cerca --------------------------------------------------------
 
-const searchState = { query: "", langs: { it: true, en: true } };
+const searchState = { query: "" };
 let searchTimer = null;
 
 async function viewSearch() {
@@ -123,25 +126,10 @@ async function viewSearch() {
     },
   });
 
-  const langChip = (code, label) =>
-    el(
-      "button",
-      {
-        class: `chip ${searchState.langs[code] ? "on" : ""}`,
-        onClick: (e) => {
-          searchState.langs[code] = !searchState.langs[code];
-          e.target.classList.toggle("on");
-          runSearch();
-        },
-      },
-      label
-    );
-
   app.append(
     el("header", { class: "topbar col" }, [
       el("h1", { class: "brand small" }, "Cerca"),
       input,
-      el("div", { class: "chips" }, [langChip("it", "Italiano"), langChip("en", "English")]),
     ])
   );
 
@@ -150,9 +138,6 @@ async function viewSearch() {
 
   async function runSearch() {
     const q = searchState.query.trim();
-    const langs = Object.entries(searchState.langs)
-      .filter(([, on]) => on)
-      .map(([c]) => c);
     if (!q) {
       clear(results);
       results.append(el("p", { class: "hint" }, "Digita per cercare tra migliaia di manga."));
@@ -161,7 +146,7 @@ async function viewSearch() {
     clear(results);
     results.append(spinner());
     try {
-      const { items } = await api.search(q, langs);
+      const { items } = await api.search(q);
       clear(results);
       if (!items.length) {
         results.append(el("p", { class: "hint" }, "Nessun risultato."));
@@ -179,8 +164,6 @@ async function viewSearch() {
 }
 
 // --- Vista: Dettaglio manga ---------------------------------------------
-
-const detailLangs = { it: true, en: true };
 
 async function viewDetail(mangaId) {
   clearActiveTab();
@@ -232,25 +215,9 @@ async function viewDetail(mangaId) {
 
   // Sezione capitoli
   const chapWrap = el("div", { class: "chapters" });
-  const langChip = (code, label) =>
-    el(
-      "button",
-      {
-        class: `chip ${detailLangs[code] ? "on" : ""}`,
-        onClick: (e) => {
-          detailLangs[code] = !detailLangs[code];
-          e.target.classList.toggle("on");
-          loadChapters();
-        },
-      },
-      label
-    );
 
   body.append(
-    el("div", { class: "chapters-head" }, [
-      el("h2", {}, "Capitoli"),
-      el("div", { class: "chips" }, [langChip("it", "IT"), langChip("en", "EN")]),
-    ]),
+    el("div", { class: "chapters-head" }, [el("h2", {}, "Capitoli")]),
     chapWrap
   );
 
@@ -259,22 +226,15 @@ async function viewDetail(mangaId) {
   async function loadChapters() {
     clear(chapWrap);
     chapWrap.append(spinner());
-    const langs = Object.entries(detailLangs).filter(([, on]) => on).map(([c]) => c);
-    if (!langs.length) {
-      clear(chapWrap);
-      chapWrap.append(el("p", { class: "hint" }, "Seleziona almeno una lingua."));
-      return;
-    }
     try {
-      const { items } = await api.fetchChapters(mangaId, langs);
+      const { items } = await api.fetchChapters(mangaId);
       clear(chapWrap);
       if (!items.length) {
-        chapWrap.append(el("p", { class: "hint" }, "Nessun capitolo in queste lingue."));
+        chapWrap.append(el("p", { class: "hint" }, "Nessun capitolo disponibile."));
         return;
       }
       for (const ch of items) {
         const isLast = lastRead && lastRead.chapterId === ch.id;
-        const sub = [ch.language.toUpperCase(), ch.scanlationGroup].filter(Boolean).join(" · ");
         chapWrap.append(
           el(
             "a",
@@ -286,7 +246,6 @@ async function viewDetail(mangaId) {
             [
               el("div", { class: "ch-main" }, [
                 el("span", { class: "ch-title" }, ch.displayTitle),
-                sub ? el("span", { class: "ch-sub" }, sub) : null,
               ]),
               isLast ? el("span", { class: "badge" }, "Letto") : el("span", { class: "chev" }, "›"),
             ]
@@ -306,7 +265,6 @@ async function viewDetail(mangaId) {
 
 const readerPrefs = {
   mode: localStorage.getItem("yomi.reader.mode") || "vertical", // vertical | horizontal
-  dataSaver: localStorage.getItem("yomi.reader.dataSaver") === "1",
 };
 
 async function viewReader(chapterId, mangaId) {
@@ -324,18 +282,10 @@ async function viewReader(chapterId, mangaId) {
     render();
   });
 
-  const saverBtn = el("button", { class: `icon-btn ${readerPrefs.dataSaver ? "on" : ""}` }, "💧");
-  saverBtn.addEventListener("click", () => {
-    readerPrefs.dataSaver = !readerPrefs.dataSaver;
-    localStorage.setItem("yomi.reader.dataSaver", readerPrefs.dataSaver ? "1" : "0");
-    saverBtn.classList.toggle("on", readerPrefs.dataSaver);
-    load();
-  });
-
   const bar = el("header", { class: "reader-bar" }, [
     el("a", { class: "icon-btn", href: back }, "‹"),
     counter,
-    el("div", { class: "reader-actions" }, [saverBtn, modeBtn]),
+    el("div", { class: "reader-actions" }, [modeBtn]),
   ]);
   const stage = el("div", { class: "reader-stage" });
   app.append(bar, stage);
@@ -346,7 +296,7 @@ async function viewReader(chapterId, mangaId) {
     clear(stage);
     stage.append(spinner());
     try {
-      pages = await api.fetchPages(chapterId, readerPrefs.dataSaver);
+      pages = await api.fetchPages(chapterId);
       if (!pages.length) {
         clear(stage);
         stage.append(errorBox("Nessuna pagina disponibile."));
@@ -430,7 +380,12 @@ async function viewReader(chapterId, mangaId) {
 function viewLibrary() {
   setActiveTab("library");
   clear(app);
-  app.append(el("header", { class: "topbar" }, el("h1", { class: "brand small" }, "Libreria")));
+  app.append(
+    el("header", { class: "topbar spread" }, [
+      el("h1", { class: "brand small" }, "Libreria"),
+      gearButton(),
+    ])
+  );
   const body = el("div", { class: "page" });
   app.append(body);
 
@@ -497,6 +452,87 @@ function clearActiveTab() {
   for (const a of tabbar.querySelectorAll("a")) a.classList.remove("active");
 }
 
+function gearButton() {
+  return el("a", { class: "icon-btn", href: "#/setup", title: "Impostazioni proxy" }, "⚙");
+}
+
+// --- Vista: Configurazione proxy ----------------------------------------
+
+function viewSetup() {
+  clearActiveTab();
+  tabbar.style.display = isConfigured() ? "" : "none";
+  clear(app);
+  app.append(backBar("#/home"));
+
+  const current = getProxyBase();
+  const input = el("input", {
+    class: "search-input",
+    type: "url",
+    placeholder: "https://tuo-vps.example.com",
+    value: current || "",
+    inputmode: "url",
+    autocapitalize: "off",
+    autocorrect: "off",
+    spellcheck: "false",
+  });
+  const status = el("p", { class: "hint", style: "text-align:left" });
+
+  const saveBtn = el("button", { class: "btn save" }, "Salva e verifica");
+  saveBtn.addEventListener("click", async () => {
+    const val = input.value.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//i.test(val)) {
+      status.textContent = "Inserisci un URL completo (https://…).";
+      return;
+    }
+    saveBtn.disabled = true;
+    status.textContent = "Verifico la connessione al proxy…";
+    try {
+      const res = await fetch(`${val}/api/ping`);
+      const text = (await res.text()).trim();
+      if (!res.ok || !/pong/i.test(text)) throw new Error(`risposta inattesa (${res.status})`);
+      setProxyBase(val);
+      status.textContent = "✓ Backend connesso!";
+      setTimeout(() => (location.hash = "#/home"), 500);
+    } catch (e) {
+      saveBtn.disabled = false;
+      status.textContent = `Non riesco a raggiungere il backend: ${e.message}. Controlla l'URL e che server.py sia in esecuzione sul VPS.`;
+    }
+  });
+
+  app.append(
+    el("div", { class: "page setup" }, [
+      el("h1", {}, "Configura il backend"),
+      el("p", { class: "muted" }, [
+        "Yomi legge i manga da MangaWorld tramite un piccolo backend Python ",
+        "(server.py) che ospiti tu sul tuo VPS. Incolla qui il suo indirizzo.",
+      ]),
+      el("label", { class: "setup-label" }, "URL del backend"),
+      input,
+      saveBtn,
+      status,
+      el("div", { class: "setup-guide" }, [
+        el("h2", {}, "Come ottenerlo (una volta sola)"),
+        el("ol", {}, [
+          el("li", {}, [
+            "Copia la cartella ",
+            el("code", {}, "web/"),
+            " sul tuo VPS e installa le dipendenze: ",
+            el("code", {}, "pip install -r requirements.txt"),
+            ".",
+          ]),
+          el("li", {}, [
+            "Avvia il backend esposto: ",
+            el("code", {}, "HOST=0.0.0.0 python server.py 8080"),
+            " (meglio dietro un reverse proxy con HTTPS).",
+          ]),
+          el("li", {}, "Incolla qui l'indirizzo pubblico (es. https://tuo-vps.example.com)."),
+        ]),
+        el("p", { class: "muted" }, "Istruzioni dettagliate nel file web/DEPLOY.md del progetto."),
+      ]),
+    ])
+  );
+}
+
 // --- Router --------------------------------------------------------------
 
 function parseRoute() {
@@ -514,6 +550,11 @@ async function router() {
 
   const { parts, params } = parseRoute();
   const [root, arg] = parts;
+
+  if (root === "setup") return viewSetup();
+
+  // Senza proxy configurato (online, primo avvio) si va alla configurazione.
+  if (!isConfigured()) return viewSetup();
 
   switch (root) {
     case "home":
