@@ -7,17 +7,8 @@
 
 import { getProxyBase } from "./config.js";
 
-export class ProxyNotConfigured extends Error {
-  constructor() {
-    super("Backend non configurato");
-    this.name = "ProxyNotConfigured";
-  }
-}
-
 function base() {
-  const b = getProxyBase();
-  if (b === null) throw new ProxyNotConfigured();
-  return b;
+  return getProxyBase();
 }
 
 // --- Helpers -------------------------------------------------------------

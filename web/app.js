@@ -2,7 +2,6 @@
 
 import * as api from "./api.js";
 import * as store from "./store.js";
-import { isConfigured, getProxyBase, setProxyBase } from "./config.js";
 
 const app = document.getElementById("app");
 const tabbar = document.getElementById("tabbar");
@@ -86,7 +85,6 @@ async function viewHome() {
   app.append(
     el("header", { class: "topbar spread" }, [
       el("h1", { class: "brand" }, "読み Yomi"),
-      gearButton(),
     ])
   );
   const body = el("div", { class: "page" }, spinner());
@@ -383,7 +381,6 @@ function viewLibrary() {
   app.append(
     el("header", { class: "topbar spread" }, [
       el("h1", { class: "brand small" }, "Libreria"),
-      gearButton(),
     ])
   );
   const body = el("div", { class: "page" });
@@ -452,86 +449,6 @@ function clearActiveTab() {
   for (const a of tabbar.querySelectorAll("a")) a.classList.remove("active");
 }
 
-function gearButton() {
-  return el("a", { class: "icon-btn", href: "#/setup", title: "Impostazioni proxy" }, "⚙");
-}
-
-// --- Vista: Configurazione proxy ----------------------------------------
-
-function viewSetup() {
-  clearActiveTab();
-  tabbar.style.display = isConfigured() ? "" : "none";
-  clear(app);
-  app.append(backBar("#/home"));
-
-  const current = getProxyBase();
-  const input = el("input", {
-    class: "search-input",
-    type: "url",
-    placeholder: "https://tuo-vps.example.com",
-    value: current || "",
-    inputmode: "url",
-    autocapitalize: "off",
-    autocorrect: "off",
-    spellcheck: "false",
-  });
-  const status = el("p", { class: "hint", style: "text-align:left" });
-
-  const saveBtn = el("button", { class: "btn save" }, "Salva e verifica");
-  saveBtn.addEventListener("click", async () => {
-    const val = input.value.trim().replace(/\/+$/, "");
-    if (!/^https?:\/\//i.test(val)) {
-      status.textContent = "Inserisci un URL completo (https://…).";
-      return;
-    }
-    saveBtn.disabled = true;
-    status.textContent = "Verifico la connessione al proxy…";
-    try {
-      const res = await fetch(`${val}/api/ping`);
-      const text = (await res.text()).trim();
-      if (!res.ok || !/pong/i.test(text)) throw new Error(`risposta inattesa (${res.status})`);
-      setProxyBase(val);
-      status.textContent = "✓ Backend connesso!";
-      setTimeout(() => (location.hash = "#/home"), 500);
-    } catch (e) {
-      saveBtn.disabled = false;
-      status.textContent = `Non riesco a raggiungere il backend: ${e.message}. Controlla l'URL e che server.py sia in esecuzione sul VPS.`;
-    }
-  });
-
-  app.append(
-    el("div", { class: "page setup" }, [
-      el("h1", {}, "Configura il backend"),
-      el("p", { class: "muted" }, [
-        "Yomi legge i manga da MangaWorld tramite un piccolo backend Python ",
-        "(server.py) che ospiti tu sul tuo VPS. Incolla qui il suo indirizzo.",
-      ]),
-      el("label", { class: "setup-label" }, "URL del backend"),
-      input,
-      saveBtn,
-      status,
-      el("div", { class: "setup-guide" }, [
-        el("h2", {}, "Come ottenerlo (una volta sola)"),
-        el("ol", {}, [
-          el("li", {}, [
-            "Copia la cartella ",
-            el("code", {}, "web/"),
-            " sul tuo VPS e installa le dipendenze: ",
-            el("code", {}, "pip install -r requirements.txt"),
-            ".",
-          ]),
-          el("li", {}, [
-            "Avvia il backend esposto: ",
-            el("code", {}, "HOST=0.0.0.0 python server.py 8080"),
-            " (meglio dietro un reverse proxy con HTTPS).",
-          ]),
-          el("li", {}, "Incolla qui l'indirizzo pubblico (es. https://tuo-vps.example.com)."),
-        ]),
-        el("p", { class: "muted" }, "Istruzioni dettagliate nel file web/DEPLOY.md del progetto."),
-      ]),
-    ])
-  );
-}
 
 // --- Router --------------------------------------------------------------
 
@@ -550,11 +467,6 @@ async function router() {
 
   const { parts, params } = parseRoute();
   const [root, arg] = parts;
-
-  if (root === "setup") return viewSetup();
-
-  // Senza proxy configurato (online, primo avvio) si va alla configurazione.
-  if (!isConfigured()) return viewSetup();
 
   switch (root) {
     case "home":
