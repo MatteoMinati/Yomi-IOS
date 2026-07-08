@@ -216,7 +216,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
-    host = os.environ.get("HOST", "127.0.0.1")
+    host = os.environ.get("HOST", "0.0.0.0")
     server = ThreadingHTTPServer((host, port), Handler)
     shown = "localhost" if host in ("127.0.0.1", "0.0.0.0") else host
     print(f"Yomi Web attivo su  http://{shown}:{port}")
