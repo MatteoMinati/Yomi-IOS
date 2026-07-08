@@ -1,6 +1,6 @@
 # Yomi 読み
 
-iOS manga reader powered by the MangaDex API. No ads, no tracking.
+Manga reader powered by the MangaDex API. No ads, no tracking.
 
 ## Features
 
