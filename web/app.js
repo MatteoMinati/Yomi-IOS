@@ -293,6 +293,13 @@ async function viewReader(chapterId, mangaId) {
   const stage = el("div", { class: "reader-stage" });
   app.append(bar, stage);
 
+  // Tap sulla pagina: mostra/nasconde le barre (reader-bar in alto + tabbar in
+  // basso). In orizzontale i tap-zone laterali servono a navigare, li ignoriamo.
+  stage.addEventListener("click", (e) => {
+    if (e.target.closest(".tap-zone")) return;
+    document.body.classList.toggle("chrome-hidden");
+  });
+
   let pages = [];
 
   async function load() {
@@ -455,7 +462,7 @@ function backBar(fallback) {
 }
 
 function setActiveTab(tab) {
-  document.body.classList.remove("reading-mode");
+  document.body.classList.remove("reading-mode", "chrome-hidden");
   tabbar.style.display = "";
   for (const a of tabbar.querySelectorAll("a")) {
     a.classList.toggle("active", a.dataset.tab === tab);
@@ -463,7 +470,7 @@ function setActiveTab(tab) {
 }
 
 function clearActiveTab() {
-  document.body.classList.remove("reading-mode");
+  document.body.classList.remove("reading-mode", "chrome-hidden");
   tabbar.style.display = "";
   for (const a of tabbar.querySelectorAll("a")) a.classList.remove("active");
 }
