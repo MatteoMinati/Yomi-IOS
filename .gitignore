@@ -1,0 +1,9 @@
+# Backup dello stato utente scritto dal server (server.py → /api/state).
+# Sono dati personali/di runtime, non vanno versionati.
+yomi-data/
+*.tmp
+
+# Ambiente Python locale
+web/.venv/
+__pycache__/
+*.pyc

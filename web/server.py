@@ -30,6 +30,7 @@ Dominio MangaWorld configurabile: MANGAWORLD_BASE=https://www.mangaworld.xx
 import os
 import sys
 import json
+import hmac
 import base64
 import urllib.parse
 import urllib.request
@@ -40,6 +41,16 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from mangaworld import MangaWorld, BASE_URL
 
 WEB_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Backup dello stato utente (libreria, progressi, capitoli letti). Il file sta
+# FUORI dalla WEB_DIR così non è scaricabile pubblicamente come file statico.
+# Percorso e segreto configurabili via variabili d'ambiente.
+DATA_DIR = os.environ.get("YOMI_DATA", os.path.join(os.path.dirname(WEB_DIR), "yomi-data"))
+STATE_FILE = os.path.join(DATA_DIR, "state.json")
+# Token condiviso per proteggere gli endpoint di backup. Se vuoto: accesso
+# libero (sconsigliato su un server esposto in rete).
+YOMI_TOKEN = os.environ.get("YOMI_TOKEN", "")
+_state_lock = threading.Lock()
 
 # Host consentiti per il proxy immagini: tutto ciò che sta sotto il dominio
 # di MangaWorld (www.* e cdn.*), qualunque sia il TLD corrente.
@@ -100,6 +111,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._api(path)
         return super().do_GET()
 
+    def do_PUT(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/api/state":
+            return self._put_state()
+        self._json({"error": "endpoint sconosciuto"}, status=404)
+
     # --- API -------------------------------------------------------------
 
     def _api(self, path: str):
@@ -111,6 +128,9 @@ class Handler(SimpleHTTPRequestHandler):
         try:
             if path == "/api/ping":
                 return self._text("pong")
+
+            if path == "/api/state":
+                return self._get_state()
 
             if path == "/api/home":
                 with _mw_lock:
@@ -165,6 +185,56 @@ class Handler(SimpleHTTPRequestHandler):
             self._json({"error": f"richiesta non valida: {e}"}, status=400)
         except Exception as e:  # noqa: BLE001
             self._json({"error": str(e)}, status=502)
+
+    # --- Backup / sync stato utente --------------------------------------
+
+    def _authorized(self) -> bool:
+        # Se non è configurato alcun token, accesso libero (personale).
+        if not YOMI_TOKEN:
+            return True
+        sent = self.headers.get("X-Yomi-Token", "")
+        if not sent:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sent = q.get("token", [""])[0]
+        return hmac.compare_digest(sent, YOMI_TOKEN)
+
+    def _get_state(self):
+        if not self._authorized():
+            return self._json({"error": "non autorizzato"}, status=401)
+        with _state_lock:
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except FileNotFoundError:
+                data = {}
+            except Exception as e:  # noqa: BLE001
+                return self._json({"error": str(e)}, status=500)
+        return self._json(data)
+
+    def _put_state(self):
+        if not self._authorized():
+            return self._json({"error": "non autorizzato"}, status=401)
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length <= 0 or length > 5_000_000:  # guardia: corpo mancante/eccessivo
+            return self._json({"error": "corpo mancante o troppo grande"}, status=400)
+        raw = self.rfile.read(length)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            return self._json({"error": "JSON non valido"}, status=400)
+        if not isinstance(data, dict):
+            return self._json({"error": "atteso un oggetto JSON"}, status=400)
+        with _state_lock:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            tmp = STATE_FILE + ".tmp"
+            try:
+                # Scrittura atomica: prima su file temporaneo, poi rename.
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+                os.replace(tmp, STATE_FILE)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"error": str(e)}, status=500)
+        return self._json({"ok": True})
 
     # --- Proxy immagini --------------------------------------------------
 
@@ -230,6 +300,8 @@ def main():
     shown = "localhost" if host in ("127.0.0.1", "0.0.0.0") else host
     print(f"Yomi Web attivo su  http://{shown}:{port}")
     print(f"Sorgente dati: {BASE_URL}")
+    print(f"Backup stato:  {STATE_FILE}")
+    print(f"Protezione:    {'token attivo' if YOMI_TOKEN else 'NESSUN token (imposta YOMI_TOKEN)'}")
     print("Premi Ctrl+C per fermare.")
     try:
         server.serve_forever()

@@ -1,5 +1,8 @@
 // store.js — persistenza libreria e progressi, come LibraryStore (UserDefaults)
-// ma su localStorage del browser.
+// ma su localStorage del browser. Ogni modifica programma un push di backup
+// verso il server (vedi sync.js), se la sincronizzazione è configurata.
+
+import { schedulePush } from "./sync.js";
 
 const LIB_KEY = "yomi.library";
 const PROGRESS_KEY = "yomi.lastRead";
@@ -42,6 +45,7 @@ export function toggleSaved(manga) {
     });
   }
   save(LIB_KEY, lib);
+  schedulePush();
   return idx < 0; // true se ora salvato
 }
 
@@ -61,6 +65,7 @@ export function setLastRead(mangaId, chapter, totalChapters = 0) {
     at: Date.now(),
   };
   save(PROGRESS_KEY, all);
+  schedulePush();
 }
 
 // Tracciamento dei capitoli letti (per marcare cascata)
@@ -84,6 +89,7 @@ export function markChaptersAsRead(mangaId, chapters, readChapterId) {
   const all = load(READ_CHAPTERS_KEY, {});
   all[mangaId] = Array.from(readIds);
   save(READ_CHAPTERS_KEY, all);
+  schedulePush();
 }
 
 export function isChapterRead(mangaId, chapterId) {

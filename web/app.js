@@ -2,6 +2,7 @@
 
 import * as api from "./api.js";
 import * as store from "./store.js?v=3";
+import * as sync from "./sync.js";
 
 const app = document.getElementById("app");
 const tabbar = document.getElementById("tabbar");
@@ -393,6 +394,12 @@ function viewLibrary() {
   app.append(
     el("header", { class: "topbar spread" }, [
       el("h1", { class: "brand small" }, "Libreria"),
+      el("a", {
+        class: "icon-btn",
+        href: "#/settings",
+        "aria-label": "Backup e impostazioni",
+        html: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+      }),
     ])
   );
   const body = el("div", { class: "page" });
@@ -438,6 +445,102 @@ function viewLibrary() {
       });
     }
   });
+}
+
+// --- Vista: Impostazioni / Backup ---------------------------------------
+
+function viewSettings() {
+  setActiveTab("library");
+  clear(app);
+  app.append(backBar("#/library"));
+  const body = el("div", { class: "page setup" });
+  app.append(body);
+
+  const status = el("p", { class: "muted sync-status" }, "");
+  function setStatus(msg, ok) {
+    status.textContent = msg;
+    status.style.color = ok === false ? "var(--accent)" : "var(--muted)";
+  }
+
+  const tokenInput = el("input", {
+    class: "search-input",
+    type: "password",
+    placeholder: "Token segreto del server",
+    value: sync.getToken(),
+  });
+
+  const saveBtn = el("button", { class: "btn save" }, "Salva e sincronizza");
+  saveBtn.addEventListener("click", async () => {
+    sync.setToken(tokenInput.value.trim());
+    setStatus("Sincronizzazione…");
+    try {
+      await sync.pull();
+      await sync.push();
+      setStatus("Sincronizzato ✓");
+    } catch (e) {
+      setStatus("Errore: " + e.message, false);
+    }
+  });
+
+  const syncNowBtn = el("button", { class: "btn" }, "Sincronizza ora");
+  syncNowBtn.addEventListener("click", async () => {
+    setStatus("Sincronizzazione…");
+    try {
+      await sync.pull();
+      await sync.push();
+      setStatus("Sincronizzato ✓");
+    } catch (e) {
+      setStatus("Errore: " + e.message, false);
+    }
+  });
+
+  const exportBtn = el("button", { class: "btn" }, "Esporta backup (.json)");
+  exportBtn.addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(sync.snapshot(), null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", {
+      href: url,
+      download: `yomi-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  const importInput = el("input", {
+    type: "file",
+    accept: "application/json",
+    style: "display: none;",
+  });
+  const importBtn = el("button", { class: "btn" }, "Importa backup");
+  importBtn.addEventListener("click", () => importInput.click());
+  importInput.addEventListener("change", async () => {
+    const file = importInput.files[0];
+    if (!file) return;
+    try {
+      const obj = JSON.parse(await file.text());
+      sync.applyMerged(obj);
+      sync.schedulePush();
+      setStatus("Backup importato ✓");
+    } catch (e) {
+      setStatus("Import fallito: " + e.message, false);
+    }
+  });
+
+  body.append(
+    el("h1", {}, "Backup e sincronizzazione"),
+    el("p", { class: "muted" },
+      "Salva libreria e progressi sul server: restano al sicuro se pulisci la cache o cambi dispositivo."),
+    el("label", { class: "setup-label" }, "Token segreto del server"),
+    tokenInput,
+    saveBtn,
+    el("div", { class: "settings-actions" }, [syncNowBtn, exportBtn, importBtn]),
+    importInput,
+    status
+  );
 }
 
 // --- Componenti condivisi ------------------------------------------------
@@ -506,6 +609,8 @@ async function router() {
       return viewDetail(arg);
     case "read":
       return viewReader(arg, params.get("manga"));
+    case "settings":
+      return viewSettings();
     default:
       location.hash = "#/home";
   }
@@ -516,5 +621,22 @@ window.addEventListener("hashchange", () => {
   router();
   window.scrollTo(0, 0);
 });
-window.addEventListener("DOMContentLoaded", router);
-if (document.readyState !== "loading") router();
+
+function boot() {
+  router();
+  // Sincronizzazione iniziale in background (solo se il token è configurato):
+  // scarica il backup dal server, lo fonde in locale e, se qualcosa è
+  // cambiato, ri-renderizza; poi ricarica sul server lo stato unito.
+  if (sync.getToken()) {
+    sync
+      .pull()
+      .then((changed) => {
+        if (changed) router();
+        sync.schedulePush();
+      })
+      .catch(() => {});
+  }
+}
+
+window.addEventListener("DOMContentLoaded", boot);
+if (document.readyState !== "loading") boot();

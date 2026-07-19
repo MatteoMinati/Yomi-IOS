@@ -316,6 +316,10 @@ body.chrome-hidden .reader-bar {
 .setup-label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
 .setup .search-input { margin-bottom: 12px; }
 .setup .btn.save { align-self: stretch; width: 100%; background: var(--accent); border-color: var(--accent); color: #fff; }
+.settings-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.settings-actions .btn { align-self: stretch; text-align: center; }
+.sync-status { margin-top: 14px; min-height: 18px; font-weight: 600; }
+
 .setup-guide { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 18px; }
 .setup-guide h2 { font-size: 16px; margin: 0 0 10px; }
 .setup-guide ol { margin: 0 0 10px; padding-left: 20px; }
