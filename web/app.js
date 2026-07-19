@@ -417,34 +417,114 @@ function viewLibrary() {
     return;
   }
 
-  const grid = el("div", { class: "grid" });
-  body.append(grid);
+  // Barra di ordinamento
+  const sortOptions = [
+    ["recent", "Recenti"],
+    ["oldest", "Meno recenti"],
+    ["alpha", "A-Z"],
+    ["new", "Nuovi capitoli"],
+  ];
+  const filterRow = el("div", { class: "filter-row" });
+  const gridWrap = el("div", {});
+  body.append(filterRow, gridWrap);
 
-  lib.forEach((m) => {
-    const last = store.getLastRead(m.id);
-    const card = mangaCard(m);
+  // Cache dei risultati "ha nuovi capitoli?" (condivisa tra badge e ordinamento)
+  const newInfo = new Map();
 
-    if (last) {
-      card.append(el("span", { class: "resume" }, last.label));
-    }
-
-    // Badge "Nuovo" nell'angolo in alto a destra della copertina
-    const newBadge = el("span", { class: "new-chapters", style: "display: none;" }, "● Nuovo");
-    card.querySelector(".cover").append(newBadge);
-    grid.append(card);
-
-    // Controlla nuovi capitoli in background: confronta i capitoli attuali con
-    // quanti ne esistevano all'ultima lettura (baseline salvata da setLastRead).
-    if (last && last.totalChapters) {
-      api.fetchChapters(m.id).then(({ items }) => {
-        if (items.length > last.totalChapters) {
-          newBadge.style.display = "";
+  async function computeNew() {
+    await Promise.all(
+      lib.map(async (m) => {
+        if (newInfo.has(m.id)) return;
+        if (!store.getLastRead(m.id)) return newInfo.set(m.id, false);
+        try {
+          const { items } = await api.fetchChapters(m.id);
+          newInfo.set(m.id, store.hasNewChapters(m.id, items));
+        } catch {
+          newInfo.set(m.id, false);
         }
-      }).catch(() => {
-        // Silenzioso se non riesce a caricare
+      })
+    );
+  }
+
+  // Timestamp effettivo per l'ordine di aggiunta: le voci senza addedAt
+  // (salvate prima di questa funzione) valgono come le più vecchie, ma
+  // mantengono l'ordine relativo attuale (indice 0 = più recente).
+  const ts = (m, i) => (typeof m.addedAt === "number" ? m.addedAt : -i);
+
+  function sortList(key) {
+    const arr = lib.map((m, i) => ({ m, i }));
+    if (key === "oldest") arr.sort((a, b) => ts(a.m, a.i) - ts(b.m, b.i));
+    else if (key === "alpha")
+      arr.sort((a, b) => (a.m.title || "").localeCompare(b.m.title || "", "it"));
+    else if (key === "new")
+      arr.sort((a, b) => {
+        const na = newInfo.get(a.m.id) ? 1 : 0;
+        const nb = newInfo.get(b.m.id) ? 1 : 0;
+        if (na !== nb) return nb - na; // con nuovi capitoli prima
+        return ts(b.m, b.i) - ts(a.m, a.i);
       });
+    else arr.sort((a, b) => ts(b.m, b.i) - ts(a.m, a.i)); // "recent"
+    return arr.map((x) => x.m);
+  }
+
+  function renderGrid(list) {
+    clear(gridWrap);
+    const grid = el("div", { class: "grid" });
+    gridWrap.append(grid);
+
+    list.forEach((m) => {
+      const last = store.getLastRead(m.id);
+      const card = mangaCard(m);
+      if (last) card.append(el("span", { class: "resume" }, last.label));
+
+      const newBadge = el("span", { class: "new-chapters", style: "display: none;" }, "● Nuovo");
+      card.querySelector(".cover").append(newBadge);
+      grid.append(card);
+
+      const showBadge = () => {
+        if (newInfo.get(m.id)) newBadge.style.display = "";
+      };
+      if (newInfo.has(m.id)) {
+        showBadge();
+      } else if (last) {
+        api.fetchChapters(m.id).then(({ items }) => {
+          newInfo.set(m.id, store.hasNewChapters(m.id, items));
+          showBadge();
+        }).catch(() => {});
+      }
+    });
+  }
+
+  async function renderFor(key) {
+    // L'ordine per "nuovi capitoli" richiede di conoscere lo stato di tutti
+    // prima di disegnare: mostriamo lo spinner mentre li recuperiamo.
+    if (key === "new") {
+      clear(gridWrap);
+      gridWrap.append(spinner());
+      await computeNew();
     }
-  });
+    renderGrid(sortList(key));
+  }
+
+  const activeSort = store.getLibrarySort();
+  for (const [key, label] of sortOptions) {
+    const chip = el(
+      "button",
+      {
+        class: `chip ${key === activeSort ? "on" : ""}`,
+        onClick: () => {
+          store.setLibrarySort(key);
+          for (const c of filterRow.children) c.classList.remove("on");
+          chip.classList.add("on");
+          renderFor(key);
+        },
+      },
+      label
+    );
+    filterRow.append(chip);
+  }
+
+  renderFor(activeSort);
 }
 
 // --- Vista: Impostazioni / Backup ---------------------------------------

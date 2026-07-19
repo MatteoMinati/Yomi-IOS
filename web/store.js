@@ -42,11 +42,23 @@ export function toggleSaved(manga) {
       title: manga.title,
       coverFileName: manga.coverFileName,
       coverURL: manga.coverURL,
+      addedAt: Date.now(),
     });
   }
   save(LIB_KEY, lib);
   schedulePush();
   return idx < 0; // true se ora salvato
+}
+
+// Ordinamento scelto per la Libreria (preferenza di vista, solo locale).
+const LIB_SORT_KEY = "yomi.library.sort";
+
+export function getLibrarySort() {
+  return localStorage.getItem(LIB_SORT_KEY) || "recent";
+}
+
+export function setLibrarySort(key) {
+  localStorage.setItem(LIB_SORT_KEY, key);
 }
 
 // --- Progressi di lettura ------------------------------------------------
@@ -95,5 +107,22 @@ export function markChaptersAsRead(mangaId, chapters, readChapterId) {
 export function isChapterRead(mangaId, chapterId) {
   const readIds = getReadChapters(mangaId);
   return readIds.includes(chapterId);
+}
+
+// Un manga ha "nuovi capitoli" da leggere? `items` è l'elenco dei capitoli
+// dal più vecchio al più recente (come lo restituisce l'API). Robusto anche sui
+// dati vecchi (letti prima che salvassimo la baseline `totalChapters`).
+export function hasNewChapters(mangaId, items) {
+  const last = getLastRead(mangaId);
+  if (!last || !items || !items.length) return false;
+
+  // Se il capitolo letto più di recente non è l'ultimo disponibile, ci sono
+  // capitoli più nuovi non letti → "nuovo". Copre anche il caso senza baseline.
+  const newestId = items[items.length - 1].id;
+  if (last.chapterId && last.chapterId !== newestId) return true;
+
+  // Fallback sul conteggio (utile se il capitolo letto non è più nell'elenco).
+  if (typeof last.totalChapters === "number") return items.length > last.totalChapters;
+  return false;
 }
 

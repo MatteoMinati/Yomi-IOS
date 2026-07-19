@@ -179,6 +179,15 @@ button { font: inherit; cursor: pointer; }
 }
 .search-input:focus { border-color: var(--accent); }
 .chips { display: flex; gap: 8px; }
+.filter-row {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  margin-bottom: 16px;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-row .chip { flex: 0 0 auto; white-space: nowrap; }
 .chip {
   background: var(--bg-elev2);
   border: 1px solid var(--line);

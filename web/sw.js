@@ -1,7 +1,7 @@
 /* Service worker di Yomi: mette in cache l'app shell per l'avvio offline e
    l'installazione come app. I dati (backend MangaWorld e immagini) restano
    sulla rete: nessun intervento sulle richieste cross-origin. */
-const CACHE = 'yomi-v4';
+const CACHE = 'yomi-v6';
 
 const SHELL = [
   './',
