@@ -1,7 +1,7 @@
 // app.js — router hash-based e viste di Yomi Web.
 
 import * as api from "./api.js";
-import * as store from "./store.js";
+import * as store from "./store.js?v=3";
 
 const app = document.getElementById("app");
 const tabbar = document.getElementById("tabbar");
@@ -231,21 +231,26 @@ async function viewDetail(mangaId) {
         chapWrap.append(el("p", { class: "hint" }, "Nessun capitolo disponibile."));
         return;
       }
-      for (const ch of items) {
-        const isLast = lastRead && lastRead.chapterId === ch.id;
+      const reversed = items.reverse();
+      const totalChapters = items.length;
+      for (const ch of reversed) {
+        const isRead = store.isChapterRead(mangaId, ch.id);
         chapWrap.append(
           el(
             "a",
             {
-              class: `chapter ${isLast ? "reading" : ""}`,
+              class: `chapter ${isRead ? "read" : ""}`,
               href: `#/read/${ch.id}?manga=${mangaId}`,
-              onClick: () => store.setLastRead(mangaId, ch),
+              onClick: () => {
+                store.setLastRead(mangaId, ch, totalChapters);
+                store.markChaptersAsRead(mangaId, reversed, ch.id);
+              },
             },
             [
               el("div", { class: "ch-main" }, [
                 el("span", { class: "ch-title" }, ch.displayTitle),
               ]),
-              isLast ? el("span", { class: "badge" }, "Letto") : el("span", { class: "chev" }, "›"),
+              isRead ? el("span", { class: "badge" }, "✓ Letto") : el("span", { class: "chev" }, "›"),
             ]
           )
         );
@@ -398,20 +403,34 @@ function viewLibrary() {
     return;
   }
 
-  body.append(
-    el(
-      "div",
-      { class: "grid" },
-      lib.map((m) => {
-        const last = store.getLastRead(m.id);
-        const card = mangaCard(m);
-        if (last) {
-          card.append(el("span", { class: "resume" }, last.label));
+  const grid = el("div", { class: "grid" });
+  body.append(grid);
+
+  lib.forEach((m) => {
+    const last = store.getLastRead(m.id);
+    const card = mangaCard(m);
+
+    if (last) {
+      card.append(el("span", { class: "resume" }, last.label));
+    }
+
+    // Badge "Nuovo" nell'angolo in alto a destra della copertina
+    const newBadge = el("span", { class: "new-chapters", style: "display: none;" }, "● Nuovo");
+    card.querySelector(".cover").append(newBadge);
+    grid.append(card);
+
+    // Controlla nuovi capitoli in background: confronta i capitoli attuali con
+    // quanti ne esistevano all'ultima lettura (baseline salvata da setLastRead).
+    if (last && last.totalChapters) {
+      api.fetchChapters(m.id).then(({ items }) => {
+        if (items.length > last.totalChapters) {
+          newBadge.style.display = "";
         }
-        return card;
-      })
-    )
-  );
+      }).catch(() => {
+        // Silenzioso se non riesce a caricare
+      });
+    }
+  });
 }
 
 // --- Componenti condivisi ------------------------------------------------

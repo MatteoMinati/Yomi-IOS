@@ -83,6 +83,15 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # silenzioso; gli errori applicativi tornano come JSON
 
+    def end_headers(self):
+        # File statici dell'app shell: no-cache così il browser rivalida sempre
+        # (304 se invariato) invece di servire moduli JS/CSS stantii dalla cache
+        # euristica. API e immagini gestiscono i propri header di cache.
+        path = urllib.parse.urlparse(self.path).path
+        if not path.startswith("/api/") and path != "/img":
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path == "/img":
