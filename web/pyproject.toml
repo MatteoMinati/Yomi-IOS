@@ -1,8 +1,7 @@
 [project]
 name = "web"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Yomi Web backend: MangaWorld scraper + static hosting for the PWA"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.12.3",
